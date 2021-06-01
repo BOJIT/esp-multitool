@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=debian:buster
+ARG BASE_IMAGE=i386/debian:buster
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND noninteractive
@@ -12,6 +12,16 @@ RUN apt-get -y update && \
         binfmt-support ca-certificates qemu-utils kpartx \
     && rm -rf /var/lib/apt/lists/*
 
+# Python Wrapper Dependencies
+RUN apt-get -y update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip
+
+RUN pip3 install \
+        python-dotenv
+
 WORKDIR /build
 
 COPY . build/pi-gen/
+
+ENTRYPOINT [ "python3", "build/build.py" ]
