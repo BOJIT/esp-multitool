@@ -1,9 +1,5 @@
 #include <Arduino.h>
 
-// MASTER CODE
-
-#include <common.h>
-
 typedef struct test_struct {
     int x;
     int y;

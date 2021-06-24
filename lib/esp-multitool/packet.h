@@ -22,10 +22,6 @@
 /* -------------------------------------------------------------------------- */
 
 
-#define ESPM_MASTER
-#define ESPM_SLAVE
-
-
 /**
     \def ESP-Multitool header:
     \brief all packets from this library include this 32-bit header. As all slaves
@@ -38,7 +34,7 @@
 
 
 /* -------------------------------------------------------------------------- */
-/* ---------------- ----------- ENUMERATIONS -------------------------------- */
+/* ---------------------------- ENUMERATIONS -------------------------------- */
 /* -------------------------------------------------------------------------- */
 
 
@@ -104,62 +100,57 @@ typedef struct {
     espm_err_t err;
 } espm_ack_t;
 
-#ifdef ESPM_MASTER
+/**
+ * \struct espm_srv_req
+ * \brief Service request packet
+ */
+typedef struct {
+    bool query_locked;  /* If set to true, 'locked' devices will respond */
+} espm_srv_req_t;
 
-    /**
-     * \struct espm_srv_req
-     * \brief Service request packet
-     */
-    typedef struct {
-        bool query_locked;  /* If set to true, 'locked' devices will respond */
-    } espm_srv_req_t;
+/**
+ * \struct espm_serial_req
+ * \brief Serial request packet - while technically a 'request', this packet
+ * does not request any information, instead sending a stream buffer
+ */
+typedef struct {
+    espm_buf_t buf;  /* Serial stream buffer */
+} espm_serial_req_t;
 
-    /**
-     * \struct espm_serial_req
-     * \brief Serial request packet - while technically a 'request', this packet
-     * does not request any information, instead sending a stream buffer
-     */
-    typedef struct {
-        espm_buf_t buf;  /* Serial stream buffer */
-    } espm_serial_req_t;
+/**
+ * \struct espm_srv_resp
+ * \brief Service response packet
+ */
+typedef struct {
+    espm_err_t err; /* Error code */
+    char name[20];  /* Human-readable slave device name: can be used as
+                        identifier instead of MAC address if unique */
+    bool ota;       /* Set to true if slave accepts OTA firmware updates */
+    bool serial;    /* Set to true if virtual slave port is created */
+    bool ctrl;      /* Set to true if control parameter map is available */
+    bool stat;      /* Set to true if status parameter map is available */
+} espm_srv_resp_t;
 
-#endif
-
-#ifdef ESPM_SLAVE
-
-    /**
-     * \struct espm_srv_resp
-     * \brief Service response packet
-     */
-    typedef struct {
-        espm_err_t err; /* Error code */
-        char name[20];  /* Human-readable slave device name: can be used as
-                           identifier instead of MAC address if unique */
-        bool ota;       /* Set to true if slave accepts OTA firmware updates */
-        bool serial;    /* Set to true if virtual slave port is created */
-        bool ctrl;      /* Set to true if control parameter map is available */
-        bool stat;      /* Set to true if status parameter map is available */
-    } espm_srv_resp_t;
-
-    /**
-     * \struct espm_serial_resp
-     * \brief Serial response packet - standard acknowledgement
-     */
-    typedef struct {
-        espm_ack_t ack; /* Serial buffer packet acknowledgement */
-    } espm_serial_req_t;
-
-#endif
+/**
+ * \struct espm_serial_resp
+ * \brief Serial response packet - standard acknowledgement
+ */
+typedef struct {
+    espm_ack_t ack; /* Serial buffer packet acknowledgement */
+} espm_serial_resp_t;
 
 /**
  * \struct espm_msg_buf_t
  * \brief Message buffer - sized at the maximum ESP-NOW Message size
  */
 typedef struct {
-    espm_header_t header;
-    union {
+    uint8_t mac[6];         /* Mac address */
+    espm_header_t header;   /* Header buffer */
+    union {                 /* Union of all possible message types */
         espm_srv_req_t srv_req;
+        espm_serial_req_t serial_req;
         espm_srv_resp_t srv_resp;
+        espm_serial_resp_t serial_req;
     } msg;
 } espm_msg_buf_t;
 
