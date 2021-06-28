@@ -25,6 +25,7 @@
 /* ------------------------------- MACROS ----------------------------------- */
 /* -------------------------------------------------------------------------- */
 
+/** @todo move to opt.h file? */
 
 /* By default only master code is included if not overridden */
 #ifndef ESPM_MASTER
