@@ -5,6 +5,8 @@
 #
 # Code based in part off the esptool.py project: https://github.com/espressif/esptool
 
+#################################### Modules ###################################
+
 import os
 import sys
 import argparse
@@ -37,18 +39,77 @@ except Exception:
     else:
         raise
 
+#################################### Globals ###################################
 
-# esp-multitool release version
-__version__ = "0.0.1"
+__version__ = "0.0.1"       # esp-multitool release version
+
+DEFAULT_SERIAL_WRITE_TIMEOUT = 10   # timeout for serial port write
+DEFAULT_CONNECT_ATTEMPTS = 7        # default number of times to try connection
 
 
-# Generic helper functions
+############################ Generic Helper Functions ##########################
 
 def arg_auto_int(x):
     return int(x, 0)
 
+def get_port_list():
+    if list_ports is None:
+        raise Exception("Listing all serial ports is currently not available. Please try to specify the port when "
+                         "running esp-multitool.py or update the pyserial package to the latest version")
+    return sorted(ports.device for ports in list_ports.comports())
 
+# This function is also lifted from esptool.py
+def slip_reader(port, trace_function):
+    """Generator to read SLIP packets from a serial port.
+    Yields one full SLIP packet at a time, raises exception on timeout or invalid data.
 
+    Designed to avoid too many calls to serial.read(1), which can bog
+    down on slow systems.
+    """
+    partial_packet = None
+    in_escape = False
+    while True:
+        waiting = port.inWaiting()
+        read_bytes = port.read(1 if waiting == 0 else waiting)
+        if read_bytes == b'':
+            waiting_for = "header" if partial_packet is None else "content"
+            raise Exception("Timed out waiting for packet %s" % waiting_for)
+        for b in read_bytes:
+            if type(b) is int:
+                b = bytes([b])  # python 2/3 compat
+
+            if partial_packet is None:  # waiting for packet header
+                if b == b'\xc0':
+                    partial_packet = b""
+                else:
+                    raise Exception('Invalid head of packet (0x%s)' % hexify(b))
+            elif in_escape:  # part-way through escape sequence
+                in_escape = False
+                if b == b'\xdc':
+                    partial_packet += b'\xc0'
+                elif b == b'\xdd':
+                    partial_packet += b'\xdb'
+                else:
+                    raise Exception('Invalid SLIP escape (0xdb, 0x%s)' % (hexify(b)))
+            elif b == b'\xdb':  # start of escape sequence
+                in_escape = True
+            elif b == b'\xc0':  # end of packet
+                yield partial_packet
+                partial_packet = None
+            else:  # normal byte in packet
+                partial_packet += b
+
+# SLIP flush input and output buffers
+
+""" Write bytes to the serial port while performing SLIP escaping """
+def slip_write(self, packet):
+    buf = b'\xc0' \
+        + (packet.replace(b'\xdb', b'\xdb\xdd').replace(b'\xc0', b'\xdb\xdc')) \
+        + b'\xc0'
+    self.trace("Write %d bytes: %s", len(buf), HexFormatter(buf))
+    self._port.write(buf)
+
+################################ Class Definition ##############################
 
 class ESPMultitool():
     """
@@ -62,8 +123,6 @@ class ESPMultitool():
 
     BAUD_RATE = 115200                  # Serial communication baud rate:
                                         # can only be changed for OTA and Serial operations
-    DEFAULT_SERIAL_WRITE_TIMEOUT = 10   # timeout for serial port write
-    DEFAULT_CONNECT_ATTEMPTS = 7        # default number of times to try connection
 
 
     def __init__(self, port=None):
@@ -77,10 +136,7 @@ class ESPMultitool():
             print("Creating new Serial instance...")
             if port is None:
                 # Show all ports and wait for user prompt (terminal only)
-                portlist = list_ports.comports()
-                ports = ([p.device for p in portlist])
-                port = self._option_prompt("Select Serial Port:", ports)
-
+                port = self._option_prompt("Select Serial Port:", get_port_list())
                 self._port = serial.Serial(port, self.BAUD_RATE)
 
             elif isinstance(port, serial.Serial):
@@ -134,6 +190,7 @@ class ESPMultitool():
         port = self.port()
 
 
+############################# Terminal Entry Point #############################
 
 def main(argv=None):
     # Instantiate base class with interactive terminal behaviour
