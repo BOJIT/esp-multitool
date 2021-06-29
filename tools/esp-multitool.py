@@ -8,7 +8,6 @@
 import os
 import sys
 import argparse
-import cutie
 
 # This block is taken straight from esptool.py
 try:
@@ -39,12 +38,16 @@ except Exception:
         raise
 
 
+# esp-multitool release version
 __version__ = "0.0.1"
+
 
 # Generic helper functions
 
 def arg_auto_int(x):
     return int(x, 0)
+
+
 
 
 class ESPMultitool():
@@ -97,10 +100,19 @@ class ESPMultitool():
         if self.TERMINAL is False:
             raise Exception("Behaviour not explicit - Possible options: \n" + "\n".join(opts))
         else:
+            # Syntax is a bit verbose here: required for PlatformIO terminal input
             print('\n' + msg + '\n')
-            opt = opts[cutie.select(opts)]
-            print('')
-            return opt
+            for i, opt in enumerate(opts):
+                print("  %d) %s" % (i, opt))
+            print('\n' + 'Select Option: ')
+            usr = input()
+            while 1:
+                try:
+                    opt = opts[int(usr)]
+                    return opt
+                except:
+                    print('Invalid Option - Select Again: ')
+                    usr = input()
 
 
     # Sub-command functions
@@ -109,6 +121,8 @@ class ESPMultitool():
 
     def discover(self, args):
         port = self.port()
+
+        print(args)
 
     def flash(self, args):
         port = self.port()
@@ -236,7 +250,7 @@ def main(argv=None):
 
     # Call relevant command
     operation_func = getattr(espm, args.operation)
-    operation_func(args)
+    operation_func(vars(args))
 
 
 if __name__ == '__main__':
