@@ -24,7 +24,7 @@
 
 /**
     \def ESP-Multitool header:
-    \brief all packets from this library include this 32-bit header. As all slaves
+    \brief All packets from this library include this 32-bit header. As all slaves
     listen to the broadcast address, this header reduces the likelihood of other
     ESP-NOW packets interfering with the operation of this library. The value
     is simply the CRC-32 of the string 'esp-multitool':
@@ -42,16 +42,17 @@
  * \enum espm_err
  * \brief Error enumeration for ESP-NOW packets
  */
-typedef enum {
+enum {
     ESPM_ERR_OK = 0,
     ESPM_ERR_MEM,
-} espm_err_t;
+};
+typedef uint8_t espm_err_t;
 
 /**
  * \enum espm_type
  * \brief Message type for ESP-NOW
  */
-typedef enum {
+enum {
     ESPM_MSG_NULL = 0,
     ESPM_MSG_SRV_REQ,
     ESPM_MSG_SRV_RESP,
@@ -62,9 +63,9 @@ typedef enum {
     ESPM_MSG_CTRL_REQ,
     ESPM_MSG_CTRL_RESP,
     ESPM_MSG_STAT_REQ,
-    ESPM_MSG_STAT_RESP,
-} espm_type_t;
-
+    ESPM_MSG_STAT_RESP
+};
+typedef uint8_t espm_type_t;
 
 /* -------------------------------------------------------------------------- */
 /* ------------------------------ TYPEDEFS ---------------------------------- */
@@ -75,7 +76,7 @@ typedef enum {
  * \struct espm_header
  * \brief Message header for ESP-NOW
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint32_t id;        /* ESPM ID: Packets with non-matching IDs are dropped */
     espm_type_t type;   /* Message type (see #espm_type_t) */
 } espm_header_t;
@@ -85,7 +86,7 @@ typedef struct {
  * \brief Message struct for non-structured buffers that may span multiple
  * ESP-Now packets and may need dynamic allocation.
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint32_t len;   /* Total number of bytes in the entire packet sequence */
     uint32_t seq;   /* Index of this packet in the entire packet sequence */
     /* Buffer - sized to fill the remainder of an ESP-NOW packet */
@@ -96,7 +97,7 @@ typedef struct {
  * \struct espm_ack
  * \brief Message struct for responses that don't need to return any data.
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     espm_err_t err;
 } espm_ack_t;
 
@@ -104,7 +105,7 @@ typedef struct {
  * \struct espm_srv_req
  * \brief Service request packet
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     bool query_locked;  /* If set to true, 'locked' devices will respond */
 } espm_srv_req_t;
 
@@ -113,7 +114,7 @@ typedef struct {
  * \brief Serial request packet - while technically a 'request', this packet
  * does not request any information, instead sending a stream buffer
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     espm_buf_t buf;  /* Serial stream buffer */
 } espm_serial_req_t;
 
@@ -121,7 +122,7 @@ typedef struct {
  * \struct espm_srv_resp
  * \brief Service response packet
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     espm_err_t err; /* Error code */
     char name[20];  /* Human-readable slave device name: can be used as
                         identifier instead of MAC address if unique */
@@ -135,7 +136,7 @@ typedef struct {
  * \struct espm_serial_resp
  * \brief Serial response packet - standard acknowledgement
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     espm_ack_t ack; /* Serial buffer packet acknowledgement */
 } espm_serial_resp_t;
 
@@ -143,7 +144,7 @@ typedef struct {
  * \struct espm_msg_buf_t
  * \brief Message buffer - sized at the maximum ESP-NOW Message size
  */
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint8_t mac[6];         /* Mac address */
     espm_header_t header;   /* Header buffer */
     union {                 /* Union of all possible message types */

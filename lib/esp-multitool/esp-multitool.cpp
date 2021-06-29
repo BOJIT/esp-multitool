@@ -81,9 +81,6 @@ static void handlerTask(void *args)
             return;
         }
 
-
-
-
     }
 }
 

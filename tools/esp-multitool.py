@@ -7,9 +7,10 @@
 
 #################################### Modules ###################################
 
-import os
-import sys
 import argparse
+import struct
+import sys
+import os
 
 # This block is taken straight from esptool.py
 try:
@@ -46,6 +47,11 @@ __version__ = "0.0.1"       # esp-multitool release version
 DEFAULT_SERIAL_WRITE_TIMEOUT = 10   # timeout for serial port write
 DEFAULT_CONNECT_ATTEMPTS = 7        # default number of times to try connection
 
+# Struct layouts - see packet.h
+ESPM_ENDIANNESS = '<'
+ESPM_HEADER = 'IB'
+ESPM_BUF = 'II237s'
+ESPM_SRV_REQ = 'B'
 
 ############################ Generic Helper Functions ##########################
 
@@ -59,7 +65,7 @@ def get_port_list():
     return sorted(ports.device for ports in list_ports.comports())
 
 # This function is also lifted from esptool.py
-def slip_reader(port, trace_function):
+def slip_reader(port):
     """Generator to read SLIP packets from a serial port.
     Yields one full SLIP packet at a time, raises exception on timeout or invalid data.
 
@@ -106,7 +112,6 @@ def slip_write(self, packet):
     buf = b'\xc0' \
         + (packet.replace(b'\xdb', b'\xdb\xdd').replace(b'\xc0', b'\xdb\xdc')) \
         + b'\xc0'
-    self.trace("Write %d bytes: %s", len(buf), HexFormatter(buf))
     self._port.write(buf)
 
 ################################ Class Definition ##############################
@@ -124,11 +129,12 @@ class ESPMultitool():
     BAUD_RATE = 115200                  # Serial communication baud rate:
                                         # can only be changed for OTA and Serial operations
 
-
     def __init__(self, port=None):
         self._port = None
         if port is not None:
             self.port(port)
+
+        self._rx_buf = 0
 
     # Auto port-creation code. If port exists, it is re-used.
     def port(self, port=None):
@@ -169,6 +175,30 @@ class ESPMultitool():
                 except:
                     print('Invalid Option - Select Again: ')
                     usr = input()
+
+    def _slip_read(self):
+        pass
+        # Wait until bytes are in the buffer.
+
+        # Read the header to see how long the message is:
+
+        # for number of packets:
+            # get packet length
+            # read in block. Strip start and end characters
+
+            # ack after each packet?
+
+        # Remove SLIP encoding, return single buf containing any joined fragments
+
+    def _slip_write(self, buf):
+        pass
+        # add in all SLIP-escaped characters
+
+        # step over array, adding in slip frames. Break into sub-buffers
+
+        # Pass these buffers to Serial.write
+
+        # ack after each packet?
 
 
     # Sub-command functions

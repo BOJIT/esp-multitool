@@ -65,7 +65,8 @@ void loop() {
     //     Serial.println("Error sending the data");
     // }
 
-    Serial.println("Still Master");
-
-    vTaskDelay(1000);
+    if(Serial.available()) {
+        uint8_t c = Serial.read();
+        Serial.write(c);
+    }
 }
