@@ -33,9 +33,9 @@ void setup()
     // xTaskCreate(sensingTask, "sensing", 2048, NULL, 1, NULL);
     // xTaskCreate(freqTask, "freq", 2048, NULL, 2, NULL);
 
-    // Serial.begin(BAUD_RATE);
+    Serial.begin(115200);
 
-    // Serial.println("Slave");
+    Serial.println("Slave");
 
     // Serial.print("ESP Board MAC Address:  ");
     // Serial.println(WiFi.macAddress());

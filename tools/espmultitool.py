@@ -11,6 +11,9 @@ import argparse
 import struct
 import sys
 import os
+import subprocess
+
+import time
 
 # This block is taken straight from esptool.py
 try:
@@ -53,6 +56,12 @@ ESPM_HEADER = 'IB'
 ESPM_BUF = 'II237s'
 ESPM_SRV_REQ = 'B'
 
+# SLIP Encoding characters
+SLIP_END = b'\xc0'
+SLIP_ESC = b'\xdb'
+SLIP_ESC_END = b'\xdb\xdc'
+SLIP_ESC_ESC = b'\xdb\xdd'
+
 ############################ Generic Helper Functions ##########################
 
 def arg_auto_int(x):
@@ -64,55 +73,55 @@ def get_port_list():
                          "running esp-multitool.py or update the pyserial package to the latest version")
     return sorted(ports.device for ports in list_ports.comports())
 
-# This function is also lifted from esptool.py
-def slip_reader(port):
-    """Generator to read SLIP packets from a serial port.
-    Yields one full SLIP packet at a time, raises exception on timeout or invalid data.
+# # This function is also lifted from esptool.py
+# def slip_reader(port):
+#     """Generator to read SLIP packets from a serial port.
+#     Yields one full SLIP packet at a time, raises exception on timeout or invalid data.
 
-    Designed to avoid too many calls to serial.read(1), which can bog
-    down on slow systems.
-    """
-    partial_packet = None
-    in_escape = False
-    while True:
-        waiting = port.inWaiting()
-        read_bytes = port.read(1 if waiting == 0 else waiting)
-        if read_bytes == b'':
-            waiting_for = "header" if partial_packet is None else "content"
-            raise Exception("Timed out waiting for packet %s" % waiting_for)
-        for b in read_bytes:
-            if type(b) is int:
-                b = bytes([b])  # python 2/3 compat
+#     Designed to avoid too many calls to serial.read(1), which can bog
+#     down on slow systems.
+#     """
+#     partial_packet = None
+#     in_escape = False
+#     while True:
+#         waiting = port.inWaiting()
+#         read_bytes = port.read(1 if waiting == 0 else waiting)
+#         if read_bytes == b'':
+#             waiting_for = "header" if partial_packet is None else "content"
+#             raise Exception("Timed out waiting for packet %s" % waiting_for)
+#         for b in read_bytes:
+#             if type(b) is int:
+#                 b = bytes([b])  # python 2/3 compat
 
-            if partial_packet is None:  # waiting for packet header
-                if b == b'\xc0':
-                    partial_packet = b""
-                else:
-                    raise Exception('Invalid head of packet (0x%s)' % hexify(b))
-            elif in_escape:  # part-way through escape sequence
-                in_escape = False
-                if b == b'\xdc':
-                    partial_packet += b'\xc0'
-                elif b == b'\xdd':
-                    partial_packet += b'\xdb'
-                else:
-                    raise Exception('Invalid SLIP escape (0xdb, 0x%s)' % (hexify(b)))
-            elif b == b'\xdb':  # start of escape sequence
-                in_escape = True
-            elif b == b'\xc0':  # end of packet
-                yield partial_packet
-                partial_packet = None
-            else:  # normal byte in packet
-                partial_packet += b
+#             if partial_packet is None:  # waiting for packet header
+#                 if b == b'\xc0':
+#                     partial_packet = b""
+#                 else:
+#                     raise Exception('Invalid head of packet (0x%s)' % hexify(b))
+#             elif in_escape:  # part-way through escape sequence
+#                 in_escape = False
+#                 if b == b'\xdc':
+#                     partial_packet += b'\xc0'
+#                 elif b == b'\xdd':
+#                     partial_packet += b'\xdb'
+#                 else:
+#                     raise Exception('Invalid SLIP escape (0xdb, 0x%s)' % (hexify(b)))
+#             elif b == b'\xdb':  # start of escape sequence
+#                 in_escape = True
+#             elif b == b'\xc0':  # end of packet
+#                 yield partial_packet
+#                 partial_packet = None
+#             else:  # normal byte in packet
+#                 partial_packet += b
 
-# SLIP flush input and output buffers
+# # SLIP flush input and output buffers
 
-""" Write bytes to the serial port while performing SLIP escaping """
-def slip_write(self, packet):
-    buf = b'\xc0' \
-        + (packet.replace(b'\xdb', b'\xdb\xdd').replace(b'\xc0', b'\xdb\xdc')) \
-        + b'\xc0'
-    self._port.write(buf)
+# """ Write bytes to the serial port while performing SLIP escaping """
+# def slip_write(self, packet):
+#     buf = b'\xc0' \
+#         + (packet.replace(b'\xdb', b'\xdb\xdd').replace(b'\xc0', b'\xdb\xdc')) \
+#         + b'\xc0'
+#     self._port.write(buf)
 
 ################################ Class Definition ##############################
 
@@ -122,45 +131,58 @@ class ESPMultitool():
         ESP-Multitool hardware.
     """
 
-    # When running this script as a module, disable any printout/interactive
-    # shell behaviour by default. Only set true by argparse.
-    TERMINAL = False
-
     BAUD_RATE = 115200                  # Serial communication baud rate:
                                         # can only be changed for OTA and Serial operations
 
-    def __init__(self, port=None):
-        self._port = None
-        if port is not None:
-            self.port(port)
+    def __init__(self, port=None, interactive=False):
+        self._interactive = interactive
 
-        self._rx_buf = 0
-
-    # Auto port-creation code. If port exists, it is re-used.
-    def port(self, port=None):
-        if self._port is None:
-            print("Creating new Serial instance...")
-            if port is None:
-                # Show all ports and wait for user prompt (terminal only)
-                port = self._option_prompt("Select Serial Port:", get_port_list())
+        # Each class instance is bound to a single port, which is fixed.
+        if port is None:
+            # Show all ports and wait for user prompt (terminal only)
+            self._port = self._option_prompt("Select Serial Port:", get_port_list())
+        elif isinstance(port, serial.Serial):
+            # Assign existing serial objet - for use as a module
+            self._port = port
+        elif isinstance(port, str):
+            # Open port based on serial identifier string
+            try:
                 self._port = serial.Serial(port, self.BAUD_RATE)
+            except:
+                sys.exit("Could not open serial port: %s\n" % port)
+        else:
+            raise Exception("Invalid Serial Port Type:")
 
-            elif isinstance(port, serial.Serial):
-                # Assign existing serial objet - for use as a module
-                self._port = port
 
-            elif isinstance(port, str):
-                # Open port based on serial identifier string
-                self._port = serial.Serial(port, self.BAUD_RATE)
+        # Launch Daemon if not already running
+        if os.name == 'nt' :
+            proc = subprocess.Popen([sys.executable, __file__, 'daemon', 'start'],
+                                    stdin=None, stdout=None, stderr=None, shell=True,
+                                    creationflags=subprocess.DETACHED_PROCESS |
+                                    subprocess.CREATE_NEW_PROCESS_GROUP)
+        elif os.name == 'posix' :
+            proc = subprocess.Popen(['nohup', sys.executable, __file__, 'daemon', 'start'],
+                                    shell=True, stdout=None, stderr=None, preexec_fn=os.setpgrp)
+        else :
+            sys.exit("Operating system is unsupported!\n")
 
-        return self._port
+        print(proc.pid)
+        # Look for open processes that are connected to the same requested port.
+        # This service should terminate if the port becomes unavailable. Somehow notify main thread?
+
+        # Connect to that port, if it doesn't exist create that subprocess.
+
+    def __del__(self):
+        print('Goodbye')
+
+        # If the port isn't required to be kept open, close the port.
 
 
     # For any settings that aren't preset, a terminal prompt is created. If
     # the class is used in a module, an exception will occur.
     def _option_prompt(self, msg, opts):
-        if self.TERMINAL is False:
-            raise Exception("Behaviour not explicit - Possible options: \n" + "\n".join(opts))
+        if self._interactive is False:
+            sys.exit("Behaviour not explicit - Possible options: \n\n" + "\n".join(opts))
         else:
             # Syntax is a bit verbose here: required for PlatformIO terminal input
             print('\n' + msg + '\n')
@@ -177,6 +199,7 @@ class ESPMultitool():
                     usr = input()
 
     def _slip_read(self):
+        # self.port.read_until
         pass
         # Wait until bytes are in the buffer.
 
@@ -190,7 +213,8 @@ class ESPMultitool():
 
         # Remove SLIP encoding, return single buf containing any joined fragments
 
-    def _slip_write(self, buf):
+    def _slip_write(self, msg):
+        self.port.write('test')
         pass
         # add in all SLIP-escaped characters
 
@@ -203,30 +227,29 @@ class ESPMultitool():
 
     # Sub-command functions
     def control(self, args):
-        port = self.port()
+        pass
 
     def discover(self, args):
-        port = self.port()
-
         print(args)
 
+    def daemon(self, args):
+        while(1):
+            print('Daemon Running!')
+            time.sleep(1)
+
     def flash(self, args):
-        port = self.port()
+        pass
 
     def serial(self, args):
-        port = self.port()
+        pass
 
     def stats(self, args):
-        port = self.port()
+        pass
 
 
 ############################# Terminal Entry Point #############################
 
 def main(argv=None):
-    # Instantiate base class with interactive terminal behaviour
-    espm = ESPMultitool()
-    espm.TERMINAL = True
-
     # Argument parser
     parser = argparse.ArgumentParser(description='esp-multitool.py v%s - \
         ESP-NOW based Upload/Debugging Utility' % __version__, prog='esp-multitool')
@@ -249,7 +272,7 @@ def main(argv=None):
         '--baud', '-b',
         help='Serial port baud rate used when flashing/reading',
         type=arg_auto_int,
-        default=os.environ.get('ESPTOOL_BAUD', espm.BAUD_RATE))
+        default=os.environ.get('ESPTOOL_BAUD', ESPMultitool.BAUD_RATE))
 
     # Subcommand arguments
     subparsers = parser.add_subparsers(
@@ -270,6 +293,17 @@ def main(argv=None):
         '--file', '-f',
         help='Flag indicating if filepath has been passed in',
         action='store_true')
+
+
+    # Daemon command
+    parser_daemon = subparsers.add_parser(
+        'daemon',
+        help='Control the state of the handler daemon')
+
+    parser_daemon.add_argument(
+        'command',
+        help='Start or stop the ESP-Multitool daemon',
+        choices=['start', 'stop'])
 
 
     # Discover command
@@ -328,16 +362,21 @@ def main(argv=None):
 
 
     # Parse argument tree
-    args = parser.parse_args(argv)
+    nsargs = parser.parse_args(argv)
     print('esp-multitool.py v%s' % __version__)
 
-    if args.operation is None:
+    if nsargs.operation is None:
         parser.print_help()
         sys.exit(0)
 
+    args = vars(nsargs)
+
+    # Instantiate base class with interactive terminal behaviour
+    espm = ESPMultitool(port=args['port'], interactive=True)
+
     # Call relevant command
-    operation_func = getattr(espm, args.operation)
-    operation_func(vars(args))
+    operation_func = getattr(espm, args['operation'])
+    operation_func(args)
 
 
 if __name__ == '__main__':
