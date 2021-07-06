@@ -134,39 +134,39 @@ class ESPMultitool():
     BAUD_RATE = 115200                  # Serial communication baud rate:
                                         # can only be changed for OTA and Serial operations
 
-    def __init__(self, port=None, interactive=False):
+    def __init__(self, port=None, interactive=False, daemon=False):
         self._interactive = interactive
+
+        # TODO note that the serial port should only be instantiated in the worker process
 
         # Each class instance is bound to a single port, which is fixed.
         if port is None:
             # Show all ports and wait for user prompt (terminal only)
             self._port = self._option_prompt("Select Serial Port:", get_port_list())
-        elif isinstance(port, serial.Serial):
-            # Assign existing serial objet - for use as a module
-            self._port = port
         elif isinstance(port, str):
+            self._port = port
             # Open port based on serial identifier string
-            try:
-                self._port = serial.Serial(port, self.BAUD_RATE)
-            except:
-                sys.exit("Could not open serial port: %s\n" % port)
+            # try:
+            #     self._port = serial.Serial(port, self.BAUD_RATE)
+            # except:
+            #     sys.exit("Could not open serial port: %s\n" % port)
         else:
             raise Exception("Invalid Serial Port Type:")
 
-
         # Launch Daemon if not already running
-        if os.name == 'nt' :
-            proc = subprocess.Popen([sys.executable, __file__, 'daemon', 'start'],
-                                    stdin=None, stdout=None, stderr=None, shell=True,
-                                    creationflags=subprocess.DETACHED_PROCESS |
-                                    subprocess.CREATE_NEW_PROCESS_GROUP)
-        elif os.name == 'posix' :
-            proc = subprocess.Popen(['nohup', sys.executable, __file__, 'daemon', 'start'],
-                                    shell=True, stdout=None, stderr=None, preexec_fn=os.setpgrp)
-        else :
-            sys.exit("Operating system is unsupported!\n")
+        if daemon is False:
+            if os.name == 'nt':
+                proc = subprocess.Popen([sys.executable, __file__, '--port', port, 'daemon', 'start'],
+                                        stdin=None, stdout=None, stderr=None, shell=True,
+                                        creationflags=subprocess.DETACHED_PROCESS |
+                                        subprocess.CREATE_NEW_PROCESS_GROUP)
+            elif os.name == 'posix':
+                proc = subprocess.Popen(['nohup', sys.executable, __file__, '--port', port ,'daemon', 'start'],
+                                        shell=True, stdout=None, stderr=None, preexec_fn=os.setpgrp)
+            else :
+                sys.exit("Operating system is unsupported!\n")
 
-        print(proc.pid)
+            print(proc.pid)
         # Look for open processes that are connected to the same requested port.
         # This service should terminate if the port becomes unavailable. Somehow notify main thread?
 
@@ -233,9 +233,15 @@ class ESPMultitool():
         print(args)
 
     def daemon(self, args):
-        while(1):
-            print('Daemon Running!')
-            time.sleep(1)
+        if args['command'] == 'start':
+            while(1):
+                print('Daemon Running!')
+                time.sleep(1)
+
+                # Add graceful termination
+
+        elif args['command'] == 'stop':
+            print('Shutting down daemon...')
 
     def flash(self, args):
         pass
@@ -372,7 +378,10 @@ def main(argv=None):
     args = vars(nsargs)
 
     # Instantiate base class with interactive terminal behaviour
-    espm = ESPMultitool(port=args['port'], interactive=True)
+    if (args['operation'] == 'daemon') and (args['command'] == 'start'):
+        espm = ESPMultitool(port=args['port'], interactive=True, daemon=True)
+    else:
+        espm = ESPMultitool(port=args['port'], interactive=True)
 
     # Call relevant command
     operation_func = getattr(espm, args['operation'])
